@@ -15,7 +15,7 @@ public:
      * initialize the SIM module with a HardwareSerial object
      * @param serial default HardwareSerial object: Serial2.begin(115200, SERIAL_8N1, 26, 27); // RX=26, TX=27
      */
-    explicit SimModule(HardwareSerial *serial);
+    explicit SimModule(HardwareSerial* serial);
 
     /**
      * power the SIM module on LillyGo T-Call Sim800L
@@ -61,11 +61,31 @@ public:
      */
     String getSignalQuality();
 
+
+    /**
+     * set the APN (Access Point Name) for the SIM module
+     * @param apn the APN to set
+     */
+    void setAPN(String apn, String user = "", String pass = "");
+
+
+    /**
+     * send an HTTP request using the SIM module
+     * (! make sure to set the APN before using this function !)
+     * @param url the URL to send the request to
+     * @param method the HTTP method to use (e.g. "GET", "POST"), default is "GET" (currently only GET and POST are supported)
+     * @param body the body of the request, default is empty string (content-type is application/json)
+     * @param timeout how long to wait for a http-response in milliseconds, default is 10000ms (10sec)
+     * @return the response string from the server, or '?' string if no response is received or an error occurred
+     */
+    String sendHTTPRequest(String url, String method = "GET", String body = "", unsigned long timeout = 10000);
+
+
     /**
      * set the HardwareSerial object for debug output
      * @param debug_serial the HardwareSerial object to use for debug output, default is Serial
      */
-    void set_debug_serial(HardwareSerial *debug_serial) {
+    void set_debug_serial(HardwareSerial* debug_serial) {
         debugSerial = debug_serial;
     }
 
@@ -78,9 +98,9 @@ public:
     }
 
 private:
-    HardwareSerial *serial;
-    HardwareSerial *debugSerial = &Serial;
-    bool debug;
+    HardwareSerial* serial;
+    HardwareSerial* debugSerial = &Serial;
+    bool debug = false;
 };
 
 

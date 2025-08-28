@@ -4,7 +4,7 @@
 
 #include "SimModule.h"
 
-::SimModule::SimModule(HardwareSerial *serial) {
+::SimModule::SimModule(HardwareSerial* serial) {
     this->serial = serial;
     this->debug = false;
 }
@@ -12,6 +12,10 @@
 void ::SimModule::start(unsigned int timeout) {
     setupModem();
     delay(timeout);
+
+    sendATCommand("AT+CLIP=1");
+    sendATCommand("AT+CNMI=2,2,0,0,0");
+    delay(1000);
 }
 
 void ::SimModule::shutdown() {
@@ -21,7 +25,6 @@ void ::SimModule::shutdown() {
 
 bool ::SimModule::isActive() {
     String response = sendATCommand("AT");
-    debugSerial->println("DEBUG isActiveResponse: " + response + " index:" + response.indexOf("OK")); //DEBUG
     if (response.indexOf("OK") != -1) {
         return true;
     }
@@ -48,6 +51,19 @@ String SimModule::sendATCommand(String command, unsigned long timeout) {
 }
 
 bool ::SimModule::sendSMS(String number, String text, unsigned int timeout, byte recursion) {
+    if(number.equals("") || text.equals("")) {
+        if (debug) {
+            debugSerial->println("ERROR sendSMS: number or text is empty"); //DEBUG
+        }
+        return false;
+    }
+    if(!number.startsWith("+")) {
+        if (debug) {
+            debugSerial->println("ERROR sendSMS: number is not in international format (e.g. +49123456789)"); //DEBUG
+        }
+        return false;
+    }
+
     //max. 3 Versuche
     if (recursion >= 3) {
         return false;
@@ -58,7 +74,6 @@ bool ::SimModule::sendSMS(String number, String text, unsigned int timeout, byte
         sendATCommand("AT+CNMI=2,2,0,0,0");
     }
 
-    digitalWrite(LED_GPIO, HIGH); // LED an
     delay(100);
     sendATCommand("AT+CMGF=1", timeout);
     delay(1000);
@@ -78,8 +93,12 @@ bool ::SimModule::sendSMS(String number, String text, unsigned int timeout, byte
             break;
         }
     }
-    if (response.indexOf("OK") != -1 && debug) {
-        debugSerial->println("SMS erfolgreich gesendet: " + text); //DEBUG
+    if (response.indexOf("OK") != -1) {
+        if (debug) {
+            debugSerial->println("SMS erfolgreich gesendet: " + text); //DEBUG
+        }
+        delay(100);
+        return true;
     }
     else {
         //Fehlerbehandlung
@@ -88,20 +107,19 @@ bool ::SimModule::sendSMS(String number, String text, unsigned int timeout, byte
         }
         if (!isActive()) {
             start();
-            sendSMS(number, text, timeout, recursion + 1);
-        } else {
+            delay(1000);
+            return sendSMS(number, text, timeout, recursion + 1);
+        }
+        else {
             delay(10000);
-            sendSMS(number, text, timeout, recursion + 1);
+            return sendSMS(number, text, timeout, recursion + 1);
         }
     }
-
-    delay(100);
-    digitalWrite(LED_GPIO, LOW); // LED aus
 }
 
 String SimModule::getSignalQuality() {
     if (!isActive()) {
-        debugSerial->println("DEBUG getSignalQuality: SIM module is not active");
+        debugSerial->println("DEBUG getSignalQuality: SIM module is not active (restarting)");
         start();
     }
 
@@ -128,4 +146,69 @@ String SimModule::getSignalQuality() {
         }
     }
     return "?";
+}
+
+void SimModule::setAPN(String apn, String user, String pass) {
+    if (!isActive()) {
+        debugSerial->println("DEBUG setAPN: SIM module is not active (restarting)");
+        start();
+    }
+
+    sendATCommand("AT+SAPBR=3,1,\"CONTYPE\",\"GPRS\"");
+    String response = sendATCommand("AT+SAPBR=3,1,\"APN\",\"" + apn + "\"");
+    if (!user.isEmpty() || !pass.isEmpty()) {
+        sendATCommand("AT+SAPBR=3,1,\"USER\",\"" + user + "\"");
+        sendATCommand("AT+SAPBR=3,1,\"PWD\",\"" + pass + "\"");
+    }
+
+    if (response.indexOf("OK") != -1) {
+        if (debug) {
+            debugSerial->println("DEBUG APN erfolgreich gesetzt: " + apn); //DEBUG
+        }
+    }
+}
+
+String SimModule::sendHTTPRequest(String url, String method, String body, unsigned long timeout) {
+    if (!isActive()) {
+        debugSerial->println("DEBUG sendHTTPRequest: SIM module is not active");
+        return "?";
+    }
+
+    String response = sendATCommand("AT+SAPBR=1,1", timeout);
+
+    sendATCommand("AT+HTTPINIT");
+    sendATCommand("AT+HTTPPARA=\"CID\",1"); //Bearer Profile ID
+    sendATCommand("AT+HTTPPARA=\"URL\",\"" + url + "\""); //Set URL
+    sendATCommand("AT+HTTPPARA=\"CONTENT\",\"application/json\""); //Set Content-Type
+
+    if (!body.isEmpty()) {
+        response = sendATCommand("AT+HTTPDATA=" + String(body.length()) + ",10000", 10000);
+        if (response.indexOf("DOWNLOAD") == -1) {
+            return "?";
+        }
+        sendATCommand(body);
+        delay(100);
+    }
+
+    String actionType = (method == "POST") ? "1" : "0";
+    response = sendATCommand("AT+HTTPACTION=" + actionType, timeout);
+    if (response.indexOf("OK") == -1) {
+        return "?";
+    }
+
+    response = "?";
+    unsigned long startTime = millis(); // Startzeit für das Timeout
+    while (millis() - startTime < timeout) {
+        if (serial->available()) {
+            response = serial->readString();
+            break;
+        }
+    }
+    if (response.indexOf("+HTTPACTION:") != -1) {
+        response = sendATCommand("AT+HTTPREAD", timeout);
+    }
+
+    sendATCommand("AT+HTTPTERM", timeout); // Terminate HTTP service
+    sendATCommand("AT+SAPBR=0,1"); // Deactivate Bearer
+    return response;
 }
