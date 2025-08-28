@@ -12,6 +12,7 @@ This library should be an easy and reliable way for beginners to simply use the 
 - `isActive()`
 - `getSignalQuality()`
 - `sendSMS()`
+- `sendHTTPRequest()` (GET und POST)
 - `sendATCommand()` -> to unlock all functionality of the module. [See AT-Command Manual](https://github.com/Xinyuan-LilyGO/LilyGo-T-Call-SIM800/blob/master/datasheet/sim800_series_at_command_manual_v1.01.pdf)
 - more coming soon ...
 
@@ -54,8 +55,19 @@ void loop() {
     
     module.sendSMS("+49123456789", "Hello from ESP32!"); // Send an SMS message using the SIM module
 
+    module.setAPN("drei.at", APNUSER, APNPASS); // Set the APN for the SIM-Card (ApnUser and ApnPass are optional)
+    Serial.println(module.sendHTTPRequest(HTTPURL, "POST", BODY)); // Send a GET/POST request, and returns the response (BODY is only for POST-Requests)
+
     module.shutdown(); //optional: Power down the SIM module (to save power when not in use)
 
     delay(10000);
 }
 ```
+
+<br>
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+
